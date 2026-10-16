@@ -74,7 +74,7 @@ export function writerExample(): FlowDocument {
       { type: "pageBreak" },
       heading("2. Guarda y comparte", 1),
       paragraph(
-        "Tu biblioteca permanece en este dispositivo. Descarga una copia .prisma para conservar todo el proyecto; exporta a DOCX para seguir trabajando en DOCX o a PDF para presentar el diseño final.",
+        "Tu biblioteca permanece en este dispositivo. Descarga una copia .auralis para conservar todo el proyecto; exporta a DOCX para seguir trabajando en DOCX o a PDF para presentar el diseño final.",
       ),
       paragraph(
         "Abre un archivo DOCX desde el inicio para continuar un documento existente. Revisa los objetos avanzados y el diseño final después de importarlo.",
