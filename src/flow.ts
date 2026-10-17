@@ -661,7 +661,10 @@ async function buildFlowPass(
       effective,
       width - pad - first - (prefix ? 15 : 0),
     );
-    if (heading) room(lines.reduce((h, l) => h + l.height, 0) + 25);
+    const keepNext=n.attrs?.keepNext??heading,keepLines=n.attrs?.keepLines??heading;
+    const paragraphHeight=lines.reduce((h,l)=>h+l.height,0);
+    if((keepLines||keepNext)&&paragraphHeight<=ph-bottom-top)
+      room(paragraphHeight+(keepNext?25:0));
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       room(line.height);

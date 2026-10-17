@@ -384,7 +384,8 @@ export async function exportDocx(
               : content,
             alignment: alignment(a.textAlign),
             style: paragraphName(node),
-            keepNext: !!caption,
+            keepNext: a.keepNext == null ? !!caption || node.type === 'heading' : a.keepNext === true,
+            keepLines: a.keepLines == null ? node.type === 'heading' : a.keepLines === true,
             heading:
               node.type === "heading"
                 ? [
@@ -1025,6 +1026,9 @@ export async function exportHtml(
         ? "text-align:" + a.textAlign
         : "",
       a.lineHeight ? "line-height:" + Number(a.lineHeight) : "",
+      a.keepNext===true||(a.keepNext==null&&n.type==='heading')?'break-after:avoid-page':'',
+      a.keepLines===true||(a.keepLines==null&&n.type==='heading')?'break-inside:avoid-page':'',
+      a.breakBefore?'break-before:page':'',
       a.firstLineIndent
         ? "text-indent:" + Number(a.firstLineIndent) + "pt"
         : "",

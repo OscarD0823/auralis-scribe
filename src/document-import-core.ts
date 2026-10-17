@@ -513,6 +513,8 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
           attrs.hangingIndent = Number(val(item, "hanging")) / 20;
         }
         if (item.localName === "pageBreakBefore") attrs.breakBefore = yes(item);
+        if (item.localName === "keepNext") attrs.keepNext = yes(item);
+        if (item.localName === "keepLines") attrs.keepLines = yes(item);
         if (item.localName === "numPr") {
           const key = val(direct(item, "numId")),
             depth = Number(val(direct(item, "ilvl"))) || 0,

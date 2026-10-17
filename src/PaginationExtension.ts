@@ -68,12 +68,14 @@ export const Pagination = Extension.create<{
             destroyed = false,
             generation=0,
             previousLayout = settings.layout;
+          let wasPreparing=false;
           async function measure(view: EditorView) {
             if (
               destroyed ||
               running ||
               !settings.layout ||
               !view.dom.isConnected
+              ||view.dom.getAttribute('aria-busy')==='true'
             )
               return;
             if (view.composing) {
@@ -198,10 +200,18 @@ export const Pagination = Extension.create<{
                       top: topOf(rect),
                       bottom: topOf(rect) + rect.height / scale,
                     });
-                  else
-                    units.push(
-                      ...[...lines.values()].sort((a, b) => a.top - b.top),
-                    );
+                  else {
+                    const measured=[...lines.values()].sort((a,b)=>a.top-b.top);
+                    const keepLines=node.attrs.keepLines??node.type.name==='heading';
+                    const keepNext=node.attrs.keepNext??node.type.name==='heading';
+                    const available=(pageSize(settings.layout)[1]-mm(settings.layout.top+settings.layout.bottom))*4/3;
+                    if(keepLines&&measured.at(-1)!.bottom-measured[0].top<=available)
+                      units.push({pos,top:measured[0].top,bottom:measured.at(-1)!.bottom,keepWithNext:!!keepNext});
+                    else {
+                      measured[measured.length-1].keepWithNext=!!keepNext;
+                      units.push(...measured);
+                    }
+                  }
                 } else
                   units.push({
                     pos,
@@ -246,10 +256,11 @@ export const Pagination = Extension.create<{
           schedule();
           return {
             update(next, old) {
+              if(next.dom.getAttribute('aria-busy')==='true'){wasPreparing=true;clearTimeout(timer);return;}
               const changed = previousLayout !== settings.layout;
               previousLayout = settings.layout;
-              if (!running && (next.state.doc !== old.doc || changed))
-                schedule();
+              if (!running && (next.state.doc !== old.doc || changed||wasPreparing))schedule();
+              wasPreparing=false;
             },
             destroy() {
               destroyed = true;

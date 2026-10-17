@@ -4,6 +4,7 @@ export type PageUnit = {
   bottom: number;
   kind?: "table";
   force?: number;
+  keepWithNext?: boolean;
 };
 export type PageGap = { pos: number; height: number; kind?: "table" };
 export function planPages(
@@ -17,12 +18,18 @@ export function planPages(
   let added = 0,
     page = 0;
   const stride = height + gap;
-  for (const unit of units) {
+  const available=height-top-bottom;
+  const linkedBottom=units.map(unit=>unit.bottom);
+  for(let i=units.length-2;i>=0;i--){
+    if(units[i].keepWithNext&&!units[i+1].force&&linkedBottom[i+1]-units[i].top<=available)
+      linkedBottom[i]=linkedBottom[i+1];
+  }
+  for (const [index,unit] of units.entries()) {
     const y = unit.top + added,
       end = page * stride + height - top - bottom;
     if (
       unit.force ||
-      (unit.bottom + added > end + 0.5 && y > page * stride + 0.5)
+      (linkedBottom[index] + added > end + 0.5 && y > page * stride + 0.5)
     ) {
       const next = page + Math.max(1, unit.force || 1);
       const space = next * stride - y;

@@ -452,6 +452,16 @@ export const DocumentAttributes = Extension.create({
             default: false,
             renderHTML: (a) => (a.breakBefore ? { class: "break-before" } : {}),
           },
+          keepNext: {
+            default:null,
+            parseHTML:element=>element.hasAttribute('data-keep-next')?element.getAttribute('data-keep-next')==='true':null,
+            renderHTML:a=>a.keepNext==null?{}:{'data-keep-next':String(a.keepNext),style:a.keepNext?'break-after:avoid-page':''},
+          },
+          keepLines: {
+            default:null,
+            parseHTML:element=>element.hasAttribute('data-keep-lines')?element.getAttribute('data-keep-lines')==='true':null,
+            renderHTML:a=>a.keepLines==null?{}:{'data-keep-lines':String(a.keepLines),style:a.keepLines?'break-inside:avoid-page':''},
+          },
           appendix: { default: false },
           appendixLabel: { default: "" },
           appendixTitle: { default: "" },
@@ -510,6 +520,7 @@ export const DocumentAttributes = Extension.create({
           if(!target)return false;event.preventDefault();target.scrollIntoView({behavior:'smooth',block:'center'});return true;
         }}},
         appendTransaction(transactions, _old, state) {
+          if(transactions.every(transaction=>transaction.getMeta('auralisHydrating')))return null;
           if (!transactions.some((t) => t.docChanged)) return null;
           const tr = state.tr;
           const used = new Set<string>();
