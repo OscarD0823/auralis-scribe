@@ -400,7 +400,7 @@ export function PageFrame(props: FrameProps) {
           setDraft(null);
         }}
       >
-        {props.rulerLayout && props.onRulerLayout && (
+        {visible && props.rulerLayout && props.onRulerLayout && (
           <>
             <DocumentRuler
               layout={props.rulerLayout}
