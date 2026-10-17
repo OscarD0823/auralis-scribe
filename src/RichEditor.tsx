@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import {Fragment,type Node as ModelNode} from '@tiptap/pm/model';
+import {type Node as ModelNode} from '@tiptap/pm/model';
 import {yieldToDevice} from '@prisma/core/task-yield';
+import {appendDocumentBatch} from './document-hydration';
 import { captureSelection, restoreSelection } from "./document-selection";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import { Node, Extension } from "@tiptap/core";
@@ -192,6 +193,7 @@ export function RichEditor({
         editor.view.dom.setAttribute('aria-busy','true');
         const blocks:ModelNode[]=[];document.forEach(node=>blocks.push(node));
         const first=Math.min(80,blocks.length);
+        let insertion=blocks.slice(0,first).reduce((sum,node)=>sum+node.nodeSize,0);
         editor.commands.setContent({...content,content:content.content?.slice(0,first)},{emitUpdate:false});
         setPreparing(first);
         void(async()=>{
@@ -200,7 +202,8 @@ export function RichEditor({
           for(let offset=first;offset<blocks.length;offset+=80){
             await yieldToDevice();
             if(stopped||editor.isDestroyed)return;
-            editor.view.dispatch(editor.state.tr.insert(editor.state.doc.content.size,Fragment.fromArray(blocks.slice(offset,offset+80))).setMeta('addToHistory',false).setMeta('preventUpdate',true).setMeta('auralisHydrating',true));
+            const batch=appendDocumentBatch(editor.state.tr,blocks.slice(offset,offset+80),insertion);
+            editor.view.dispatch(batch.transaction);insertion=batch.position;
             setPreparing(Math.min(blocks.length,offset+80));
           }
           if(stopped||editor.isDestroyed)return;
