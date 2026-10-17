@@ -59,6 +59,7 @@ import {
   type SectionKind,
 } from "./sections";
 import { replaceText, replacementMatches } from "./find-replace";
+import {insertDocumentBreak} from './document-breaks';
 import { StyleGallery } from "./StyleGallery";
 import { fontFamilies } from "@prisma/core/fonts";
 import {deviceFonts,knownInstalledFonts,installedFontFiles,normalizeFontName} from '@prisma/core/device-fonts';
@@ -417,7 +418,7 @@ export function WordTools(p: Props) {
           linkToPrevious: fields.link === "true",
           restartNumbering: fields.restart === "true",
           layout: {
-            ...(dialog === "new-section" ? p.layout : existing.layout),
+            ...(dialog === "new-section" ? selectedSection(editor,p.layout).layout : existing.layout),
             pageNumberStart: Math.max(
               1,
               Math.min(100000, Number(fields.start) || 1),
@@ -425,16 +426,7 @@ export function WordTools(p: Props) {
           },
         };
         if (dialog === "new-section") {
-          const e = needsEditor(),
-            from = e.state.selection.$from,
-            pos = from.depth ? from.after(1) : from.pos;
-          e.chain()
-            .focus()
-            .insertContentAt(pos, [
-              { type: "sectionBreak", attrs: { ...attrs, id: uid() } },
-              { type: "paragraph" },
-            ])
-            .run();
+          insertDocumentBreak(needsEditor(),'sectionBreak',{...attrs,id:uid()});
         } else if (existing.id)
           p.onFlow({
             ...flow,
@@ -821,13 +813,13 @@ export function WordTools(p: Props) {
               {action(
                 "Salto de página",
                 FilePlus2,
-                () => insert({ type: "pageBreak" }),
+                () => insertDocumentBreak(needsEditor(),'pageBreak'),
                 !editor,
               )}
               {action(
                 "Salto de columna",
                 Columns3,
-                () => insert({ type: "columnBreak" }),
+                () => insertDocumentBreak(needsEditor(),'columnBreak'),
                 !editor,
               )}
               {action("Página en blanco", FilePlus2, () =>
@@ -1490,7 +1482,8 @@ export function WordTools(p: Props) {
               </div>
               {dialog === "new-section" && (
                 <p>
-                  Se insertará después del párrafo o bloque actual. Coloca luego
+                  Se insertará donde esté el cursor y dividirá el párrafo. Dentro
+                  de una tabla o lista, se colocará después del objeto. Coloca luego
                   el cursor en la nueva sección para configurar su diseño.
                   Cambiar el tamaño de papel u orientación requiere una página
                   nueva.

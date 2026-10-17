@@ -992,7 +992,7 @@ export function normalizeAcademicDocument(
           academicStyle: style,
           number: appendixCount,
           label,
-          ...(style === "apa" ? { breakBefore: true } : { breakBefore: false }),
+          ...(style === "apa" ? { breakBefore: true } : {}),
         };
       else
         node.attrs = {
@@ -1003,7 +1003,7 @@ export function normalizeAcademicDocument(
             match?.[1] ||
             clean(node.attrs?.appendixTitle) ||
             academicPlainText(node),
-          ...(style === "apa" ? { breakBefore: true } : { breakBefore: false }),
+          ...(style === "apa" ? { breakBefore: true } : {}),
         };
     }
     if (
@@ -1129,7 +1129,7 @@ export function normalizeAcademicDocument(
     node.attrs = {
       ...node.attrs,
       kind,
-      title: indexTitles[kind],
+      title: clean(node.attrs?.title) || indexTitles[kind],
       academicStyle: style,
       entries: list.map(({ path: _path, ...entry }) => entry),
     };

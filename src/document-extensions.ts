@@ -195,6 +195,7 @@ export const GeneratedIndex = Node.create({
           leader.setAttribute("aria-hidden", "true");
           const page = document.createElement("span");
           page.className = "index-entry-page";
+          page.dataset.indexPage = entry.targetId;
           page.textContent = String(entry.page || "—");
           row.append(leader, page);
         }

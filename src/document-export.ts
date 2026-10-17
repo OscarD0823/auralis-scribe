@@ -27,6 +27,7 @@ import {
   CommentRangeEnd,
   CommentReference,
   ColumnBreak,
+  PageBreak,
   TableOfContents,
   TabStopType,
   LeaderType,
@@ -332,7 +333,17 @@ export async function exportDocx(
       ) {
         const caption = a.wordCaption as Record<string, unknown> | undefined;
         const capKind = caption?.kind === "table" ? "Tabla" : "Figura";
-        const content = caption
+        const appendix = node.type === 'appendix' || a.appendix === true;
+        const appendixLabel = String(node.type === 'appendix' ? a.label ?? 'Apéndice' : a.appendixLabel ?? 'Apéndice');
+        const appendixTitle = String(node.type === 'appendix' ? a.title ?? '' : a.appendixTitle ?? '');
+        const letter = appendixLabel.match(/\s+([A-Z]+)$/)?.[1];
+        const content = appendix
+          ? [
+              new TextRun({text: appendixLabel.replace(/\s+[A-Z]+$/, '') + (letter ? ' ' : ''), bold:true}),
+              new SimpleField('SEQ Apéndice \\* ALPHABETIC' + (letter ? '' : ' \\h'), letter ?? ''),
+              ...(appendixTitle ? [new TextRun({text: '. ' + appendixTitle,bold:true})] : []),
+            ]
+          : caption
           ? [
               new TextRun({
                 text:
@@ -368,9 +379,7 @@ export async function exportDocx(
                   ]
                 : []),
             ]
-          : node.type === "appendix"
-            ? [new TextRun([a.label, a.title].filter(Boolean).join(": "))]
-            : inline(node, {...a, bold: tableHeader || node.type === "heading", color: a.color ?? "#20273a"});
+          : inline(node, {...a, bold: tableHeader || node.type === "heading", color: a.color ?? "#20273a"});
         if (listPrefix) content.unshift(new TextRun(listPrefix + " "));
         const first = Number(a.firstLineIndent) || 0,
           hanging = Number(a.hangingIndent) || 0,
@@ -384,10 +393,10 @@ export async function exportDocx(
               : content,
             alignment: alignment(a.textAlign),
             style: paragraphName(node),
-            keepNext: a.keepNext == null ? !!caption || node.type === 'heading' : a.keepNext === true,
-            keepLines: a.keepLines == null ? node.type === 'heading' : a.keepLines === true,
+            keepNext: a.keepNext == null ? !!caption || node.type === 'heading' || appendix : a.keepNext === true,
+            keepLines: a.keepLines == null ? node.type === 'heading' || appendix : a.keepLines === true,
             heading:
-              node.type === "heading"
+              node.type === "heading" || appendix
                 ? [
                     HeadingLevel.HEADING_1,
                     HeadingLevel.HEADING_2,
@@ -550,8 +559,8 @@ export async function exportDocx(
       } else if (node.type === "pageBreak")
         children.push(
           new Paragraph({
-            children: [new TextRun({ break: 1 })],
-            pageBreakBefore: true,
+            children: [new PageBreak()],
+            spacing: {before:0,after:0},
           }),
         );
       else if (node.type === "columnBreak")
@@ -574,19 +583,20 @@ export async function exportDocx(
                 : AlignmentType.LEFT,
           }),
         );
-        if (["contents", "tables", "figures"].includes(String(a.kind)))
+        if (["contents", "tables", "figures", "appendices"].includes(String(a.kind)))
           children.push(
             new TableOfContents(String(a.title || "Tabla de contenido"), {
               hyperlink: true,
               ...(a.kind === "contents"
                 ? {
                     headingStyleRange:
-                      "1-" + Math.max(1, Math.min(6, Number(a.levels) || 3)),
+                      Math.max(1, Math.min(6, Number(a.minLevel) || 1)) + "-" + Math.max(1, Math.min(6, Number(a.levels) || 3)),
                   }
                 : {
                     captionLabelIncludingNumbers:
-                      a.kind === "tables" ? "Tabla" : "Figura",
+                      a.kind === "tables" ? "Tabla" : a.kind === "appendices" ? "Apéndice" : "Figura",
                   }),
+              ...(a.pageNumbers === false ? {pageNumbersEntryLevelsRange:'1-9'} : {}),
               beginDirty: true,
               cachedEntries: (
                 (a.entries as {

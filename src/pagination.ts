@@ -4,9 +4,10 @@ export type PageUnit = {
   bottom: number;
   kind?: "table";
   force?: number;
+  startOn?: 'oddPage'|'evenPage';
   keepWithNext?: boolean;
 };
-export type PageGap = { pos: number; height: number; kind?: "table" };
+export type PageGap = { pos: number; height: number; kind?: "table"; page?:number };
 export function planPages(
   units: PageUnit[],
   height: number,
@@ -31,10 +32,11 @@ export function planPages(
       unit.force ||
       (linkedBottom[index] + added > end + 0.5 && y > page * stride + 0.5)
     ) {
-      const next = page + Math.max(1, unit.force || 1);
+      let next = page + Math.max(1, unit.force || 1);
+      if(unit.startOn && (next+1)%2 !== (unit.startOn==='oddPage'?1:0))next++;
       const space = next * stride - y;
       if (space > 0) {
-        breaks.push({ pos: unit.pos, height: space, kind: unit.kind });
+        breaks.push({ pos: unit.pos, height: space, kind: unit.kind, page:next+1 });
         added += space;
         page = next;
       }

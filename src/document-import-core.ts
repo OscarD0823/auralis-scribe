@@ -348,6 +348,7 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
         );
         content.push(...result.content);
         images.push(...result.images);
+        pageBreak ||= result.pageBreak;
         continue;
       }
       if (["ins", "smartTag", "sdtContent"].includes(child.localName)) {
@@ -428,7 +429,10 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
             ...(visibleMarks.length ? { marks:visibleMarks } : {}),
           });
         if (item.localName === "br" || item.localName === "cr") {
-          if (val(item, "type") === "page") pageBreak = true;
+          if (val(item, "type") === "page" || val(item, "type") === 'column') {
+            pageBreak = true;
+            content.push({type:val(item,'type') === 'column' ? 'columnBreak' : 'pageBreak'});
+          }
           else content.push({ type: "hardBreak" });
         }
         if (item.localName === "drawing" || item.localName === "pict") {
@@ -480,7 +484,9 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
       ];
     const runs = [...defaultRuns, ...styleChain(styleId, "rPr")],
       attrs: Record<string, unknown> = { id: bookmarks.ids.get(el)??crypto.randomUUID() };
-    let level = /(?:heading|t[íi]tulo)([1-6])/i.exec(styleId)?.[1],
+    // Word localizes style IDs (e.g. Ttulo3Ap). The display name and inherited
+    // outline level carry the meaning; custom headings need not use HeadingN.
+    let level = /(?:heading|t[íi]?tulo)\s*([1-6])/i.exec(val(direct(styles.get(styleId), 'name')) || styleId)?.[1],
       list:
         | {
             key: string;
@@ -492,8 +498,8 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
         | undefined;
     for (const p of props)
       for (const item of children(p)) {
-        if (item.localName === "outlineLvl" && Number(val(item)) < 6)
-          level = String(Number(val(item)) + 1);
+        if (item.localName === "outlineLvl")
+          level = Number(val(item)) < 6 ? String(Number(val(item)) + 1) : undefined;
         if (item.localName === "jc")
           attrs.textAlign = val(item) === "both" ? "justify" : val(item);
         if (item.localName === "spacing") {
@@ -578,15 +584,36 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
           .map((n) => val(n, "instr"))
           .join(" "),
     });
+    // Appendix captions may have no heading style at all. A SEQ field is
+    // structural evidence; never turn a body sentence mentioning an appendix
+    // into a heading just because it contains that word.
+    const appendix = sourceParagraphs.get(node)?.field.match(/\bSEQ\s+"?(?:Ap[ée]ndice|Appendix)"?(?=\s|$)/iu);
+    if (appendix) {
+      const match = plainText(node).trim().match(/^(?:Ap[ée]ndice|Appendix)\s+([A-Z]+|\d+)\s*[.\-:–—]?\s*(.*)$/iu);
+      if (match) {
+        node.type = 'heading';
+        node.attrs = {...node.attrs,level:Number(level)||1,appendix:true,appendixLabel:'Apéndice '+match[1],appendixTitle:match[2]};
+      }
+    }
     // A drawing-only paragraph is a container in Word, not an extra visible blank line.
     const visible = result.content.some((n) => n.type !== "text" || !!n.text);
-    return [
-      ...(visible || (!result.images.length && !result.pageBreak)
-        ? [node]
-        : []),
-      ...result.images,
-      ...(result.pageBreak ? [{ type: "pageBreak" }] : []),
-    ];
+    if (!result.pageBreak)
+      return [...(visible || !result.images.length ? [node] : []), ...result.images];
+    const split:RichNode[]=[];
+    let part:RichNode[]=[];
+    const flush=()=>{
+      if (!part.length) return;
+      const segment={...node,attrs:{...node.attrs,...(split.length?{id:crypto.randomUUID(),breakBefore:false}:{})},content:part};
+      sourceParagraphs.set(segment,sourceParagraphs.get(node)!);
+      if(list)lists.set(segment,list);
+      split.push(segment);part=[];
+    };
+    for(const child of result.content){
+      if(child.type==='pageBreak'||child.type==='columnBreak'){flush();split.push(child);}
+      else part.push(child);
+    }
+    flush();
+    return [...split,...result.images];
   }
   function table(el: Element): RichNode {
     const active = new Map<number, RichNode>(),
@@ -646,17 +673,11 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
           .map((n) => n.textContent)
           .join("");
         if (wordIndexAttributes(instruction)) {
-          const caption = instruction.match(/\\c\s+"([^"]+)"/i)?.[1] ?? "";
-          const kind = /^(?:tabla|table)/i.test(caption)
-            ? "tables"
-            : /^(?:figura|figure|ilustraci[oó]n)/i.test(caption)
-              ? "figures"
-              : "contents";
           nodes = [
             {
               type: "generatedIndex",
               attrs: {
-                ...wordIndexAttributes(instruction),kind,
+                ...wordIndexAttributes(instruction),
               },
               content: [],
             },
@@ -812,7 +833,7 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
     if (
       converted[0]?.type === "generatedIndex" &&
       previous?.type === "paragraph" &&
-      /^(tabla de contenido|table of contents|contenido|contents|índice|(?:lista|tabla|índice) de (?:tablas|figuras|ilustraciones)|list of (?:tables|figures))$/i.test(
+      /^(tabla de contenido|table of contents|contenido|contents|índice|(?:lista|tabla|índice) de (?:tablas|figuras|ilustraciones|apéndices)|list of (?:tables|figures|appendices))$/i.test(
         plainText(previous).trim(),
       )
     ) {
@@ -830,13 +851,11 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
         attrs: {
           id: crypto.randomUUID(),
           title: "Sección " + (section + 1),
-          kind:
-            val(direct(sections[section], "type")) === "continuous"
-              ? "continuous"
-              : "nextPage",
+          kind: ['continuous','oddPage','evenPage'].includes(val(direct(sections[section], 'type')))
+            ? val(direct(sections[section], 'type')) : 'nextPage',
           layout: layouts[section] ?? defaultLayout(),
-          linkToPrevious: true,
-          restartNumbering: false,
+          linkToPrevious: !children(sections[section]).some(n=>['headerReference','footerReference'].includes(n.localName)),
+          restartNumbering: !!direct(sections[section], 'pgNumType')?.hasAttributeNS(W,'start'),
         },
       });
     }

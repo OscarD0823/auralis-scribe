@@ -14,7 +14,7 @@ export const Pagination = Extension.create<{
   name: "pagination",
   addOptions: () => ({}),
   addStorage() {
-    return { ...this.options };
+    return { ...this.options, pageStarts:[{pos:0,page:1}], pageCount:1 };
   },
   addProseMirrorPlugins() {
     const settings = this.storage;
@@ -124,6 +124,7 @@ export const Pagination = Extension.create<{
                     top: topOf(rect) + rect.height / scale,
                     bottom: topOf(rect) + rect.height / scale,
                     force: 1,
+                    ...(node.type.name==='sectionBreak'&&['oddPage','evenPage'].includes(node.attrs.kind)?{startOn:node.attrs.kind as 'oddPage'|'evenPage'}:{}),
                   });
                   continue;
                 }
@@ -232,6 +233,20 @@ export const Pagination = Extension.create<{
                   .setMeta(key, plan.breaks)
                   .setMeta("addToHistory", false),
               );
+              settings.pageStarts=[{pos:0,page:1},...plan.breaks.map(b=>({pos:b.pos,page:b.page??1}))];
+              settings.pageCount=plan.count;
+              const pageMap=new Map<string,number>();
+              view.state.doc.descendants((node,pos)=>{
+                if(node.attrs.id){
+                  let low=0,high=settings.pageStarts.length;
+                  while(low<high){const mid=(low+high)>>>1;if(settings.pageStarts[mid].pos<=pos)low=mid+1;else high=mid;}
+                  pageMap.set(String(node.attrs.id),settings.pageStarts[Math.max(0,low-1)].page);
+                }
+              });
+              for(const cell of view.dom.querySelectorAll<HTMLElement>('[data-index-page]')){
+                const page=pageMap.get(cell.dataset.indexPage??'');
+                if(page)cell.textContent=String(page);
+              }
               settings.onPages?.(plan.count);
             } finally {
               running = false;

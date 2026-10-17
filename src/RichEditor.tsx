@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {type Node as ModelNode} from '@tiptap/pm/model';
 import {yieldToDevice} from '@prisma/core/task-yield';
 import {appendDocumentBatch} from './document-hydration';
+import {insertDocumentBreak} from './document-breaks';
 import { captureSelection, restoreSelection } from "./document-selection";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import { Node, Extension } from "@tiptap/core";
@@ -34,6 +35,9 @@ const PageBreak = Node.create({
   name: "pageBreak",
   group: "block",
   atom: true,
+  addKeyboardShortcuts() {
+    return {'Mod-Enter':()=>{insertDocumentBreak(this.editor,'pageBreak');return true;}};
+  },
   parseHTML: () => [{ tag: "div[data-page-break]" }],
   renderHTML: () => [
     "div",
