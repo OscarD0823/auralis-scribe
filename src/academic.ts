@@ -694,7 +694,8 @@ export function collectDocumentEntries(content: RichNode): DocumentEntries {
         ...(object.page ? { page: object.page } : {}),
       });
     }
-    if (node.type === "appendix")
+    if (node.type === "appendix"){
+      result.contents.push({id,targetId:id,kind:'heading',label:[clean(attrs.label)||'Apéndice',titleText].filter(Boolean).join('. '),title:titleText,level:Number(attrs.level)||1,path,...(page?{page}:{})});
       result.appendices.push({
         id,
         targetId: id,
@@ -702,7 +703,9 @@ export function collectDocumentEntries(content: RichNode): DocumentEntries {
         label: [clean(attrs.label), titleText].filter(Boolean).join(" · "),
         title: titleText,
         path,
+        ...(page ? { page } : {}),
       });
+    }
     if (node.type === "heading" && attrs.appendix)
       result.appendices.push({
         id,

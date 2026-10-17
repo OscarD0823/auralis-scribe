@@ -373,6 +373,17 @@ export const DocumentAttributes = Extension.create({
   addGlobalAttributes() {
     return [
       {
+        types:['tableRow'],
+        attributes:{
+          repeatHeader:{default:null,parseHTML:el=>el.hasAttribute('data-repeat-header')?el.dataset.repeatHeader==='true':null,renderHTML:a=>a.repeatHeader==null?{}:{'data-repeat-header':String(a.repeatHeader)}},
+          cantSplit:{default:false,parseHTML:el=>el.dataset.cantSplit==='true',renderHTML:a=>a.cantSplit?{'data-cant-split':'true',style:'break-inside:avoid-page'}:{}},
+        },
+      },
+      {
+        types:['tableCell','tableHeader'],
+        attributes:{verticalAlign:{default:'top',parseHTML:el=>el.style.verticalAlign==='middle'?'center':el.style.verticalAlign==='bottom'?'bottom':'top',renderHTML:a=>({style:'vertical-align:'+({center:'middle',bottom:'bottom'}[String(a.verticalAlign)]??'top')})}},
+      },
+      {
         types: [
           "paragraph",
           "heading",

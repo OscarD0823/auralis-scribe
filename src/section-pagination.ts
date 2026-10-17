@@ -38,9 +38,10 @@ export function planSectionPages(units:SectionPageUnit[],initial:PageLayout,canv
   Object.assign(page,{top:prior.top+prior.height+gap,sectionId:section.id,sectionPage:pages.length-sectionStart,number:pages.length+1+numberOffset});
   pages.push(page);return page;
  };
- const advance=(unit:PageUnit,page:EditorPage)=>{
-  const space=contentStart(page)-(unit.top+added);
-  if(space>0){breaks.push({pos:unit.pos,height:space,kind:unit.kind,page:pages.length});added+=space;}
+ const advance=(unit:PageUnit,page:EditorPage,repeat=false)=>{
+  const header=repeat&&unit.repeatHeader&&unit.repeatHeader.height<page.height-px(page.layout.top+page.layout.bottom)-42?unit.repeatHeader:undefined;
+  const space=contentStart(page)-(unit.top+added)+(header?.height??0);
+  if(space>0){breaks.push({pos:unit.pos,height:space,kind:unit.kind,page:pages.length,...(header?{header}:{})});added+=space;}
  };
  const linked=units.map(u=>u.bottom);
  for(let i=units.length-2;i>=0;i--)if(units[i].keepWithNext&&!units[i+1].force&&!units[i+1].section)linked[i]=linked[i+1];
@@ -64,7 +65,7 @@ export function planSectionPages(units:SectionPageUnit[],initial:PageLayout,canv
   if(unit.force){for(let n=0;n<Math.max(1,unit.force);n++)page=append();advance(unit,page);continue;}
   const y=unit.top+added,available=page.height-px(page.layout.top+page.layout.bottom);
   const bottom=linked[i]-unit.top<=available?linked[i]:unit.bottom;
-  if(bottom+added>contentEnd(page)+.5&&y>contentStart(page)+.5){page=append();advance(unit,page);}
+  if(bottom+added>contentEnd(page)+.5&&y>contentStart(page)+.5){page=append();advance(unit,page,true);}
  }
  return {pages,breaks,count:pages.length};
 }

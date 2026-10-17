@@ -6,8 +6,9 @@ export type PageUnit = {
   force?: number;
   startOn?: 'oddPage'|'evenPage';
   keepWithNext?: boolean;
+  repeatHeader?: {tablePos:number;rows:number;columns:number;height:number};
 };
-export type PageGap = { pos: number; height: number; kind?: "table"; page?:number };
+export type PageGap = { pos: number; height: number; kind?: "table"; page?:number;header?:PageUnit['repeatHeader'] };
 export function planPages(
   units: PageUnit[],
   height: number,

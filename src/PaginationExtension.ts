@@ -7,6 +7,7 @@ import {type PageGap} from "./pagination";
 import {editorSectionBlocks,planSectionPages,type EditorPage,type SectionPageUnit} from './section-pagination';
 import {yieldToDevice} from '@prisma/core/task-yield';
 import type {Node as DocumentNode} from '@tiptap/pm/model';
+import {repeatedTableHeaderCount} from './table-tools';
 const key = new PluginKey<DecorationSet>("prismaPagination");
 function sectionDecorations(doc:DocumentNode,initial?:PageLayout) {
  if(!initial)return [];
@@ -34,6 +35,7 @@ export const Pagination = Extension.create<{
   },
   addProseMirrorPlugins() {
     const settings = this.storage;
+    let currentView:EditorView|undefined;
     return [
       new Plugin({
         key,
@@ -59,6 +61,22 @@ export const Pagination = Extension.create<{
                           const cell = document.createElement("td");
                           cell.colSpan = 100;
                           cell.style.height = item.height + "px";
+                          if(item.header){
+                            cell.colSpan=item.header.columns;
+                            const source=currentView?.nodeDOM(item.header.tablePos) as HTMLElement|null;
+                            const table=source?.matches('table')?source as HTMLTableElement:source?.querySelector('table');
+                            if(table){
+                              const holder=document.createElement('div');holder.className='editor-repeated-header';holder.contentEditable='false';
+                              const clone=table.cloneNode(false) as HTMLTableElement,body=document.createElement('tbody');
+                              const columns=table.querySelector('colgroup');if(columns)clone.append(columns.cloneNode(true));
+                              for(const row of Array.from(table.tBodies[0]?.rows??[]).slice(0,item.header.rows))body.append(row.cloneNode(true));
+                              clone.append(body);clone.removeAttribute('id');clone.removeAttribute('data-block-id');holder.append(clone);
+                              for(const el of holder.querySelectorAll<HTMLElement>('[id],a,button,input,textarea,select,[tabindex]')){el.removeAttribute('id');el.setAttribute('tabindex','-1');}
+                              for(const el of holder.querySelectorAll('[data-block-id],[data-index-page]')){el.removeAttribute('data-block-id');el.removeAttribute('data-index-page');}
+                              for(const el of holder.querySelectorAll('.selectedCell'))el.classList.remove('selectedCell');
+                              cell.append(holder);
+                            }
+                          }
                           dom.append(cell);
                         } else dom.style.height = item.height + "px";
                         return dom;
@@ -83,6 +101,7 @@ export const Pagination = Extension.create<{
           },
         },
         view(view) {
+          currentView=view;
           let timer: ReturnType<typeof setTimeout>,
             running = false,
             destroyed = false,
@@ -147,7 +166,12 @@ export const Pagination = Extension.create<{
                   continue;
                 }
                 if (node.type.name === "table") {
-                  const rows = dom.querySelectorAll("tr");
+                  const table=dom.matches('table')?dom as HTMLTableElement:dom.querySelector('table');
+                  const rows = Array.from(table?.tBodies[0]?.rows??[]);
+                  const shell={type:'table',content:Array.from({length:node.childCount},(_,i)=>{const row=node.child(i);return {type:'tableRow',attrs:row.attrs,content:Array.from({length:row.childCount},(_,j)=>({type:row.child(j).type.name,attrs:row.child(j).attrs}))};})};
+                  const headerCount=repeatedTableHeaderCount(shell);
+                  const headerHeight=rows.slice(0,headerCount).reduce((sum,row)=>sum+row.getBoundingClientRect().height/scale,0);
+                  const columns=Math.max(1,...shell.content.map(row=>row.content.reduce((sum,c)=>sum+(Number(c.attrs.colspan)||1),0)));
                   node.forEach((row, offset, i) => {
                     const box = rows[i]?.getBoundingClientRect();
                     if (box)
@@ -156,6 +180,8 @@ export const Pagination = Extension.create<{
                         top: topOf(box),
                         bottom: topOf(box) + box.height / scale,
                         kind: "table",
+                        keepWithNext:i<headerCount&&i<node.childCount-1,
+                        ...(i>=headerCount&&headerCount?{repeatHeader:{tablePos:pos,rows:headerCount,columns,height:headerHeight}}:{}),
                       });
                   });
                   continue;
@@ -280,7 +306,8 @@ export const Pagination = Extension.create<{
             if(Math.abs(width-measuredWidth)>.5){measuredWidth=width;schedule();}
           });
           resize.observe(view.dom);
-          view.dom.addEventListener('load',schedule,true);
+          const imageLoaded=(event:Event)=>{if(!(event.target as HTMLElement).closest?.('.editor-repeated-header'))schedule();};
+          view.dom.addEventListener('load',imageLoaded,true);
           // Font loads can change line wraps without a document transaction.
           document.fonts?.addEventListener("loadingdone", schedule);
           schedule();
@@ -296,7 +323,7 @@ export const Pagination = Extension.create<{
               destroyed = true;
               clearTimeout(timer);
               resize.disconnect();
-              view.dom.removeEventListener('load',schedule,true);
+              view.dom.removeEventListener('load',imageLoaded,true);
               document.fonts?.removeEventListener("loadingdone", schedule);
             },
           };

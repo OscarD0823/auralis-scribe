@@ -50,3 +50,13 @@ test('a continuous section counts its shared first page before subsequent header
  assert.equal(result.pages[3].sectionPage,1);assert.equal(result.pages[3].number,8);
  assert.equal(result.pages[3].layout.header,'Nueva cabecera');
 });
+
+test('table continuation reserves repeated header height and oversized headers cannot make a pagination loop',()=>{
+ const layout={...portrait,format:'custom',customWidth:100,customHeight:100,top:0,bottom:0} as PageLayout;
+ const header={tablePos:0,rows:2,columns:3,height:40};
+ const result=planSectionPages([{pos:1,top:0,bottom:40,kind:'table'},{pos:2,top:40,bottom:370,kind:'table'},{pos:3,top:370,bottom:410,kind:'table',repeatHeader:header}],layout);
+ assert.equal(result.count,2);assert.deepEqual(result.breaks[0].header,header);
+ assert.equal(result.breaks[0].height,result.pages[1].top-370+40);
+ const huge=planSectionPages([{pos:1,top:0,bottom:370},{pos:2,top:370,bottom:410,kind:'table',repeatHeader:{...header,height:10000}}],layout);
+ assert.equal(huge.count,2);assert.equal(huge.breaks[0].header,undefined);
+});

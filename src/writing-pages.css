@@ -15,6 +15,9 @@
 .reading-paper .document-prose{min-height:0!important}
 .reading-paper .index-entry-page,.reading-paper .index-leader{display:none}
 .reading-pages-hint{padding:12px;font:12px/1.5 system-ui,sans-serif;color:#6e778a}
+.editor-page-gap>td{position:relative;vertical-align:bottom!important}
+.editor-repeated-header{position:absolute;bottom:0;left:0;right:0;pointer-events:none;user-select:none;overflow:hidden;line-height:normal}
+.editor-repeated-header table{margin:0!important}
 .document-prose [data-resize-container][data-node="image"],.document-prose [data-resize-container][data-node="image"]>[data-resize-wrapper]{max-width:100%}
 .document-prose [data-resize-container][data-node="image"] img{max-width:100%;height:auto!important}
 @media print{.editor-preparation{display:none!important}}

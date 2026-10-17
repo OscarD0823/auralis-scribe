@@ -1,4 +1,5 @@
 import {proofingLanguage} from '@prisma/core/proofing-languages';
+import {repeatedTableHeaderCount} from './table-tools';
 import {prismaPackageMetadata} from '@prisma/core/package-metadata';
 import { PDFDocument } from "pdf-lib";
 import {preserveOfficeDocx} from '@prisma/core/office-engines';
@@ -23,6 +24,7 @@ import {
   AlignmentType,
   HeadingLevel,
   BorderStyle,
+  VerticalAlign,
   CommentRangeStart,
   CommentRangeEnd,
   CommentReference,
@@ -299,7 +301,7 @@ export async function exportDocx(
         : a.paragraphStyle === "subtitle"
           ? "Subtitle"
           : "Normal";
-    if (node.type === "heading") return undefined;
+    if (node.type === "heading" || node.type === "appendix") return undefined;
     if (
       typeof a.academicStyle === "string" &&
       a.academicStyle !== "free" &&
@@ -450,9 +452,10 @@ export async function exportDocx(
         );
       } else if (node.type === "table") {
         const rows: TableRow[] = [];
+        const repeatCount=repeatedTableHeaderCount(node);
         const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
           edge = { style: BorderStyle.SINGLE, size: 6, color: "20273A" };
-        for (const row of node.content ?? []) {
+        for (const [rowIndex,row] of (node.content ?? []).entries()) {
           const cells: TableCell[] = [];
           for (const cell of row.content ?? []) {
             const cellFlow = {...cell, content: cell.content?.map(child=>['paragraph','heading'].includes(child.type??'')?{...child,attrs:{...child.attrs,spaceAfter:0}}:child)};
@@ -468,6 +471,7 @@ export async function exportDocx(
                   : [new Paragraph("")],
                 columnSpan: Number(cell.attrs?.colspan) || 1,
                 rowSpan: Number(cell.attrs?.rowspan) || 1,
+                verticalAlign:cell.attrs?.verticalAlign==='center'?VerticalAlign.CENTER:cell.attrs?.verticalAlign==='bottom'?VerticalAlign.BOTTOM:VerticalAlign.TOP,
                 ...(Array.isArray(cell.attrs?.colwidth)
                   ? {
                       width: {
@@ -491,9 +495,8 @@ export async function exportDocx(
           rows.push(
             new TableRow({
               children: cells,
-              tableHeader: (row.content ?? []).some(
-                (c) => c.type === "tableHeader",
-              ),
+              tableHeader: rowIndex<repeatCount,
+              cantSplit:row.attrs?.cantSplit===true,
             }),
           );
         }

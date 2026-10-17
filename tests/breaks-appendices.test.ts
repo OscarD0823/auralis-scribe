@@ -91,6 +91,18 @@ test('section parity, page numbering restart and explicit page breaks survive DO
  assert.equal(plan.count,3);assert.equal(plan.breaks[0].page,3);
 });
 
+test('appendix headings have one native heading style and their cached index keeps known pages',async()=>{
+ const flow:FlowDocument={layout:defaultLayout(),content:{type:'doc',content:[{type:'generatedIndex',attrs:{kind:'contents'}},{type:'generatedIndex',attrs:{kind:'appendices'}},{type:'appendix',attrs:{id:'appendix-page',title:'Instrumento',page:5}}]}};
+ assert.equal(collectDocumentEntries(flow.content).appendices[0].page,5);
+ const files=unzipSync(await exportDocx(flow,'Apéndices con páginas'));
+ const doc=new DOMParser().parseFromString(strFromU8(files['word/document.xml']),'application/xml');
+ const heading=Array.from(doc.getElementsByTagNameNS(W,'p')).find(p=>Array.from(p.getElementsByTagNameNS(W,'fldSimple')).some(f=>f.getAttributeNS(W,'instr')?.includes('SEQ Apéndice')))!;
+ const styles=Array.from(heading.getElementsByTagNameNS(W,'pStyle'));
+ assert.equal(styles.length,1);assert.equal(styles[0].getAttributeNS(W,'val'),'Heading1');
+ const index=Array.from(doc.getElementsByTagNameNS(W,'sdt')).find(s=>s.textContent?.includes('TOC \\c'))!;
+ assert.match(index.textContent??'',/5/);
+});
+
 test('linked sections inherit headers in Word instead of exporting independent copies',async()=>{
  const layout={...defaultLayout(),header:'Cabecera compartida',footer:'Pie compartido'};
  const content: any[]=[{type:'paragraph',content:[{type:'text',text:'Primera sección'}]},{type:'sectionBreak',attrs:{id:'linked',kind:'nextPage',layout,linkToPrevious:true}},{type:'paragraph',content:[{type:'text',text:'Sección vinculada'}]}];

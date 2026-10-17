@@ -8,6 +8,7 @@ import {
   type PDFPage,
   type PDFFont,
 } from "pdf-lib";
+import {repeatedTableHeaderCount} from './table-tools';
 import {
   createFontProvider,
   resolveFontRuns,
@@ -966,7 +967,27 @@ async function buildFlowPass(
         if (needed > current)
           heights[c.row + c.rowspan - 1] += needed - current;
       }
+      const headerCount=repeatedTableHeaderCount(n),headerHeight=heights.slice(0,headerCount).reduce((s,v)=>s+v,0);
+      const drawRows=(start:number,end:number,origin:number)=>{
+        const tops=[origin];for(let i=start;i<end;i++)tops.push(tops.at(-1)!+heights[i]);
+        for(const c of cells.filter(c=>c.row>=start&&c.row<end)){
+          const x=left+columnWidths.slice(0,c.column).reduce((s,v)=>s+v,0),cy=tops[c.row-start],height=heights.slice(c.row,c.row+c.rowspan).reduce((s,v)=>s+v,0);
+          page.drawRectangle({x,y:ph-cy-height,width:c.width,height,color:color(flow.academicStyle!=='apa'&&c.node.type==='tableHeader'?'#eeedff':'#ffffff'),borderColor:color('#ccd0df'),borderWidth:flow.academicStyle==='apa'?0:.65});
+          const spare=Math.max(0,height-14-c.lines.reduce((s,line)=>s+line.height,0));
+          let textY=cy+7+(c.node.attrs?.verticalAlign==='center'?spare/2:c.node.attrs?.verticalAlign==='bottom'?spare:0);
+          for(const line of c.lines){drawLine(page,line,x+8,textY,c.width-16,line.align??'left');textY+=line.height;}
+        }
+        if(flow.academicStyle==='apa'){
+          if(start===0)page.drawLine({start:{x:left,y:ph-origin},end:{x:left+width,y:ph-origin},thickness:1,color:color('#20273a')});
+          if(end===headerCount||end===rows.length)page.drawLine({start:{x:left,y:ph-tops.at(-1)!},end:{x:left+width,y:ph-tops.at(-1)!},thickness:1,color:color('#20273a')});
+        }
+      };
       let rowIndex = 0;
+      const continueTable=()=>{
+        nextColumn();
+        if(rowIndex>=headerCount&&headerCount&&headerHeight<ph-top-bottom-42){drawRows(0,headerCount,y);y+=headerHeight;}
+      };
+      if(headerCount&&headerCount<rows.length&&headerHeight+Math.min(42,heights[headerCount])<=ph-top-bottom&&y+headerHeight+Math.min(42,heights[headerCount])>ph-bottom)nextColumn();
       while (rowIndex < rows.length) {
         let end = rowIndex + 1;
         for (let i = rowIndex; i < end; i++)
@@ -975,7 +996,9 @@ async function buildFlowPass(
         const groupHeight = heights
           .slice(rowIndex, end)
           .reduce((s, v) => s + v, 0);
-        if (groupHeight > ph - top - bottom) {
+        const keep=rows.slice(rowIndex,end).some(row=>row.attrs?.cantSplit===true)||rowIndex<headerCount;
+        if(keep&&y>top&&y+groupHeight>ph-bottom)continueTable();
+        if (groupHeight > ph-bottom-y) {
           // Continue tall rows and merged cells across pages, consuming each
           // wrapped line exactly once. Keep the original column geometry.
           const groupCells = cells.filter(c => c.row >= rowIndex && c.row < end).map(c => ({
@@ -985,7 +1008,7 @@ async function buildFlowPass(
           }));
           let consumed=0;
           while (consumed < groupHeight || groupCells.some(item=>item.next<item.cell.lines.length)) {
-            if (ph-bottom-y < 42) nextPage();
+            if (ph-bottom-y < 42) continueTable();
             const remaining=Math.max(groupHeight-consumed,...groupCells.map(item=>Math.max(0,item.start-consumed)+item.cell.lines.slice(item.next).reduce((sum,line)=>sum+line.height,0)+14));
             const segment=Math.min(ph-bottom-y,remaining),origin=y;
             if(rowIndex===0&&consumed===0)anchor(n);
@@ -1002,64 +1025,12 @@ async function buildFlowPass(
               if(unfinished&&item.next<c.lines.length&&c.lines[item.next].height>ph-top-bottom-14)throw Error('Una línea de tabla supera la altura disponible. Reduce su tamaño de letra.');
             }
             y+=segment;consumed+=segment;
-            if(consumed<groupHeight||groupCells.some(item=>item.next<item.cell.lines.length))nextPage();
+            if(consumed<groupHeight||groupCells.some(item=>item.next<item.cell.lines.length))continueTable();
           }
           rowIndex=end;continue;
         }
-        room(groupHeight);
         if (rowIndex === 0) anchor(n);
-        const tops = [y];
-        for (let i = rowIndex; i < end; i++)
-          tops.push(tops.at(-1)! + heights[i]);
-        for (const c of cells.filter((c) => c.row >= rowIndex && c.row < end)) {
-          const x =
-              left + columnWidths.slice(0, c.column).reduce((s, v) => s + v, 0),
-            cy = tops[c.row - rowIndex],
-            height = heights
-              .slice(c.row, c.row + c.rowspan)
-              .reduce((s, v) => s + v, 0);
-          page.drawRectangle({
-            x,
-            y: ph - cy - height,
-            width: c.width,
-            height,
-            color: color(
-              flow.academicStyle !== "apa" && c.node.type === "tableHeader"
-                ? "#eeedff"
-                : "#ffffff",
-            ),
-            borderColor: color("#ccd0df"),
-            borderWidth: flow.academicStyle === "apa" ? 0 : 0.65,
-          });
-          let textY = cy + 7;
-          for (const line of c.lines) {
-            drawLine(
-              page,
-              line,
-              x + 8,
-              textY,
-              c.width - 16,
-              line.align ?? "left",
-            );
-            textY += line.height;
-          }
-        }
-        if (flow.academicStyle === "apa") {
-          if (rowIndex === 0)
-            page.drawLine({
-              start: { x: left, y: ph - y },
-              end: { x: left + width, y: ph - y },
-              thickness: 1,
-              color: color("#20273a"),
-            });
-          if (end === 1 || end === rows.length)
-            page.drawLine({
-              start: { x: left, y: ph - y - groupHeight },
-              end: { x: left + width, y: ph - y - groupHeight },
-              thickness: 1,
-              color: color("#20273a"),
-            });
-        }
+        drawRows(rowIndex,end,y);
         y += groupHeight;
         rowIndex = end;
       }

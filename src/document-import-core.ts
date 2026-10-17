@@ -631,6 +631,7 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
       );
     const rows: RichNode[] = [];
     for (const row of children(el).filter((n) => n.localName === "tr")) {
+      const rowProps=direct(row,'trPr'),repeatHeader=yes(direct(rowProps,'tblHeader'));
       const cells: RichNode[] = [];
       let column = 0;
       for (const cell of children(row).filter((n) => n.localName === "tc")) {
@@ -645,12 +646,13 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
         }
         const content = blocks(cell);
         const node: RichNode = {
-          type: direct(direct(row, "trPr"), "tblHeader")
+          type: repeatHeader
             ? "tableHeader"
             : "tableCell",
           attrs: {
             colspan,
             rowspan: 1,
+            verticalAlign:['center','bottom'].includes(val(direct(props,'vAlign')))?val(direct(props,'vAlign')):'top',
             ...(grid.length
               ? { colwidth: grid.slice(column, column + colspan) }
               : {}),
@@ -662,7 +664,7 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
         cells.push(node);
         column += colspan;
       }
-      rows.push({ type: "tableRow", content: cells });
+      rows.push({ type: "tableRow", attrs:{repeatHeader,cantSplit:yes(direct(rowProps,'cantSplit'))}, content: cells });
     }
     return { type: "table", attrs: { id: crypto.randomUUID() }, content: rows };
   }

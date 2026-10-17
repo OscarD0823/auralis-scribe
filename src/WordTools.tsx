@@ -67,6 +67,7 @@ import {officeFontNames} from '@prisma/core/font-policy';
 import type {LocalFont} from '@prisma/core/local-fonts';
 import {resolvedAcademicPreset} from './academic';
 import {WordParts} from './WordParts';
+import {selectedTable,setTablePagination,distributeTableColumns,repeatedTableHeaderCount} from './table-tools';
 type Props = {
   tab: string;
   flow?: FlowDocument;
@@ -366,6 +367,9 @@ export function WordTools(p: Props) {
   async function submit() {
     setWorking(true);
     try {
+      if(dialog==='table-properties'){
+        setTablePagination(needsEditor(),Number(fields.repeatRows),fields.rowBreaks==='keep'?true:fields.rowBreaks==='split'?false:undefined);
+      }
       if (dialog === "academic") {
         academic(fields.style as AcademicStyle);
         setDialog("");
@@ -1175,6 +1179,13 @@ export function WordTools(p: Props) {
                 </Button>
               ))}
             </div>
+            {action('Propiedades de tabla',Table2,()=>{try{const table=selectedTable(needsEditor()).node;open('table-properties',{repeatRows:String(repeatedTableHeaderCount(table.toJSON())),rowBreaks:'unchanged'});}catch(error){p.onError(error);}},!editor)}
+            {action('Distribuir columnas',Columns3,()=>{try{distributeTableColumns(needsEditor());}catch(error){p.onError(error);}},!editor)}
+            <label>Alineación vertical
+              <select aria-label="Alineación vertical de celda" value={String(editor?.getAttributes(editor.isActive('tableHeader')?'tableHeader':'tableCell').verticalAlign??'top')} onChange={e=>editor?.chain().focus().setCellAttribute('verticalAlign',e.target.value).run()}>
+                <option value="top">Arriba</option><option value="center">Centro</option><option value="bottom">Abajo</option>
+              </select>
+            </label>
             {action("Título y nota", Quote, captionDialog, !editor)}
           </>,
         )}
@@ -1221,6 +1232,7 @@ export function WordTools(p: Props) {
                   academic: "Formatos del trabajo",
                   index: "Personalizar índice",
                   compatibility: "Resumen de importación DOCX",
+                  'table-properties':'Propiedades de tabla',
                 }[dialog]
               }
             </h2>
@@ -1297,6 +1309,12 @@ export function WordTools(p: Props) {
               <Button onClick={() => setDialog("")}>Cerrar resumen</Button>
             </div>
           )}
+          {dialog==='table-properties'&&<>
+            {field('repeatRows','Filas iniciales que se repiten en cada página','number')}
+            <p className="ribbon-note">Usa 0 para desactivar la repetición. Edita el encabezado en la primera hoja; las copias se actualizan automáticamente.</p>
+            {field('rowBreaks','División de filas al exportar','text',[['unchanged','Conservar el ajuste de cada fila'],['keep','Mantener cada fila completa cuando quepa'],['split','Permitir dividir filas entre páginas']])}
+            <p className="ribbon-note">La división se aplica al PDF y al DOCX. La vista de escritura mantiene juntas las filas normales; las filas mayores que una hoja requieren revisar la vista PDF.</p>
+          </>}
           {dialog === "academic" && (
             <div className="academic-browser">
               <div className="academic-format-list">
