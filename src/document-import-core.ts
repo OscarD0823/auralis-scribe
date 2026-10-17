@@ -441,7 +441,9 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
             data = parts[path];
           if (data && /\.(png|jpe?g)$/i.test(path)) {
             const extent = all(item, "extent")[0],
-              width = Number(extent?.getAttribute("cx")) / 9525;
+              width = Number(extent?.getAttribute("cx")) / 9525,
+              height = Number(extent?.getAttribute("cy")) / 9525,
+              displayWidth = Math.max(24, Math.min(1600, width || 400));
             images.push({
               type: "image",
               attrs: {
@@ -450,7 +452,11 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
                   const src="data:image/"+(/\.png$/i.test(path)?"png":"jpeg")+";base64,"+encodeFont(data);
                   imageSources.set(path,src);return src;
                 })(),
-                width: Math.max(24, Math.min(1600, width || 400)),
+                width: displayWidth,
+                // Reserve the declared frame before lazy images decode, so
+                // offscreen illustrations do not collapse the page layout.
+                ...(Number.isFinite(width)&&width>0&&Number.isFinite(height)&&height>0
+                  ? {height:height*displayWidth/width}:{}),
                 alt: all(item, "docPr")[0]?.getAttribute("descr") || "",
               },
             });
