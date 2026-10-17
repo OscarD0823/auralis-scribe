@@ -704,7 +704,7 @@ export async function exportDocx(
         },
         titlePage: !!layout.differentFirst,
       },
-      headers: {
+      headers: i>0 && info.linkToPrevious ? undefined : {
         default: new Header({
           children: [
             header(layout.header, layout.numbering && where === "header-right"),
@@ -735,7 +735,7 @@ export async function exportDocx(
             }
           : {}),
       },
-      footers: {
+      footers: i>0 && info.linkToPrevious ? undefined : {
         default: new Footer({
           children: [
             footer(layout.footer, layout.numbering && where !== "header-right"),

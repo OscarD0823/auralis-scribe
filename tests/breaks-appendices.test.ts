@@ -90,3 +90,14 @@ test('section parity, page numbering restart and explicit page breaks survive DO
  const plan=planPages([{pos:1,top:0,bottom:10},{pos:5,top:10,bottom:10,force:1,startOn:'oddPage'}],100,10,10);
  assert.equal(plan.count,3);assert.equal(plan.breaks[0].page,3);
 });
+
+test('linked sections inherit headers in Word instead of exporting independent copies',async()=>{
+ const layout={...defaultLayout(),header:'Cabecera compartida',footer:'Pie compartido'};
+ const content: any[]=[{type:'paragraph',content:[{type:'text',text:'Primera sección'}]},{type:'sectionBreak',attrs:{id:'linked',kind:'nextPage',layout,linkToPrevious:true}},{type:'paragraph',content:[{type:'text',text:'Sección vinculada'}]}];
+ const bytes=await exportDocx({layout,content:{type:'doc',content}},'Cabeceras');
+ const parsed=new DOMParser().parseFromString(strFromU8(unzipSync(bytes)['word/document.xml']),'application/xml');
+ const sections=[...Array.from(parsed.getElementsByTagNameNS(W,'sectPr'))];
+ assert.equal(sections[0].getElementsByTagNameNS(W,'headerReference').length,1);
+ assert.equal(sections[1].getElementsByTagNameNS(W,'headerReference').length,0);
+ assert.equal(importDocx(bytes).flow.content.content!.find(n=>n.type==='sectionBreak')!.attrs?.linkToPrevious,true);
+});
