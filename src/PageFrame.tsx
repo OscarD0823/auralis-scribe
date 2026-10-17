@@ -95,7 +95,7 @@ export function PageFrame(props: FrameProps) {
     props;
   const root = useRef<HTMLDivElement>(null),
     textLayer = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState<[number, number]>([595, 842]),
+  const [dimensions, setDimensions] = useState<[number, number]>(page.size??[595, 842]),
     [inspection, setInspection] = useState<Inspection | null>(null),
     [visible, setVisible] = useState(false),
     [draft, setDraft] = useState<Mark | null>(null);
@@ -140,6 +140,7 @@ export function PageFrame(props: FrameProps) {
     mark: Mark;
   } | null>(null);
   useEffect(() => {
+    if (!visible) return;
     let cancelled = false;
     (async () => {
       const p = await (await getPdf(source)).getPage(page.index + 1),
@@ -152,7 +153,7 @@ export function PageFrame(props: FrameProps) {
     return () => {
       cancelled = true;
     };
-  }, [source.id, page.index, page.rotation]);
+  }, [source.id, page.index, page.rotation, visible]);
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {

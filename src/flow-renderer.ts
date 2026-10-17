@@ -21,9 +21,12 @@ let worker: Worker | undefined,
 const exports: Job[] = [];
 function dispatch(job: Job) {
   active = job;
+  // The preserved DOCX and its comparison snapshots can be much larger than the
+  // visible document. Composition only needs layout/content/fonts, never these.
+  const {officeOriginal: _original, importReport: _report, ...flow}=job.flow;
   worker!.postMessage({
     id: job.id,
-    flow: job.flow,
+    flow,
     title: job.title,
     baseUrl: applicationResourceBase(),
   });

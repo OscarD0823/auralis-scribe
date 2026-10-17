@@ -104,6 +104,7 @@ export function RichEditor({
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Image.configure({
         allowBase64: true,
+        HTMLAttributes: {loading:'lazy',decoding:'async'},
         resize: {
           enabled: true,
           alwaysPreserveAspectRatio: true,

@@ -4,6 +4,8 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { EditorView } from "@tiptap/pm/view";
 import { mm, pageSize, type PageLayout } from "./flow";
 import { planPages, type PageGap, type PageUnit } from "./pagination";
+import {yieldToDevice} from '@prisma/core/task-yield';
+import type {Node as DocumentNode} from '@tiptap/pm/model';
 const key = new PluginKey<DecorationSet>("prismaPagination");
 export const Pagination = Extension.create<{
   layout?: PageLayout;
@@ -64,8 +66,9 @@ export const Pagination = Extension.create<{
           let timer: ReturnType<typeof setTimeout>,
             running = false,
             destroyed = false,
+            generation=0,
             previousLayout = settings.layout;
-          function measure(view: EditorView) {
+          async function measure(view: EditorView) {
             if (
               destroyed ||
               running ||
@@ -88,9 +91,19 @@ export const Pagination = Extension.create<{
                 units: PageUnit[] = [];
               const topOf = (rect: DOMRect) =>
                 (rect.top - editorRect.top) / scale;
-              view.state.doc.forEach((node, pos) => {
+              const measuredDocument=view.state.doc, measuredLayout=settings.layout, measuredGeneration=generation;
+              const blocks:{node:DocumentNode;pos:number}[]=[];
+              measuredDocument.forEach((node,pos)=>blocks.push({node,pos}));
+              let sliceStarted=performance.now();
+              for (const {node,pos} of blocks) {
+                if(performance.now()-sliceStarted>12){
+                  await yieldToDevice();
+                  if(destroyed)return;
+                  if(view.state.doc!==measuredDocument||settings.layout!==measuredLayout||generation!==measuredGeneration){schedule();return;}
+                  sliceStarted=performance.now();
+                }
                 const dom = view.nodeDOM(pos) as HTMLElement | null;
-                if (!dom?.getBoundingClientRect) return;
+                if (!dom?.getBoundingClientRect) continue;
                 const rect = dom.getBoundingClientRect();
                 if (pos > 0 && node.attrs.breakBefore)
                   units.push({
@@ -110,7 +123,7 @@ export const Pagination = Extension.create<{
                     bottom: topOf(rect) + rect.height / scale,
                     force: 1,
                   });
-                  return;
+                  continue;
                 }
                 if (node.type.name === "table") {
                   const rows = dom.querySelectorAll("tr");
@@ -124,7 +137,7 @@ export const Pagination = Extension.create<{
                         kind: "table",
                       });
                   });
-                  return;
+                  continue;
                 }
                 if (
                   node.isTextblock ||
@@ -146,6 +159,12 @@ export const Pagination = Extension.create<{
                     )
                       continue;
                     for (const word of text.data.matchAll(/\S+\s*/gu)) {
+                      if(performance.now()-sliceStarted>12){
+                        await yieldToDevice();
+                        if(destroyed)return;
+                        if(view.state.doc!==measuredDocument||settings.layout!==measuredLayout||generation!==measuredGeneration){schedule();return;}
+                        sliceStarted=performance.now();
+                      }
                       // Long tokens can wrap inside a word; measure their characters as well.
                       const offsets =
                         word[0].length > 40
@@ -189,7 +208,7 @@ export const Pagination = Extension.create<{
                     top: topOf(rect),
                     bottom: topOf(rect) + rect.height / scale,
                   });
-              });
+              }
               const layout = settings.layout as PageLayout,
                 ph = (pageSize(layout)[1] * 4) / 3;
               const plan = planPages(
@@ -209,11 +228,19 @@ export const Pagination = Extension.create<{
             }
           }
           function schedule() {
+            generation++;
             clearTimeout(timer);
-            timer = setTimeout(() => measure(view), 120);
+            timer = setTimeout(() => void measure(view), 120);
           }
-          const resize = new ResizeObserver(schedule);
+          // Page gaps change the editor's height. Observing those changes would
+          // repeatedly remove/rebuild every gap, especially costly on long docs.
+          let measuredWidth=view.dom.getBoundingClientRect().width;
+          const resize = new ResizeObserver(()=>{
+            const width=view.dom.getBoundingClientRect().width;
+            if(Math.abs(width-measuredWidth)>.5){measuredWidth=width;schedule();}
+          });
           resize.observe(view.dom);
+          view.dom.addEventListener('load',schedule,true);
           // Font loads can change line wraps without a document transaction.
           document.fonts?.addEventListener("loadingdone", schedule);
           schedule();
@@ -228,6 +255,7 @@ export const Pagination = Extension.create<{
               destroyed = true;
               clearTimeout(timer);
               resize.disconnect();
+              view.dom.removeEventListener('load',schedule,true);
               document.fonts?.removeEventListener("loadingdone", schedule);
             },
           };

@@ -1,6 +1,12 @@
 import type { RichNode } from "./flow";
 import { academicPlainText } from "./academic";
 import { graphemeCount } from "@prisma/core/characters";
+/** Cheap counters for the status bar; detailed Unicode analysis is on demand. */
+export function documentWordCounts(node:RichNode){
+  const text=academicPlainText(node);
+  let characters=0;for(const _character of text)characters++;
+  return {words:(text.match(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu)??[]).length,characters};
+}
 export function textStatistics(text: string) {
   const numbers = Array.from(
     text.matchAll(/(?<![\p{L}\d])[-+]?\d+(?:[.,]\d+)*(?![\p{L}\d])/gu),
