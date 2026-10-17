@@ -17,6 +17,7 @@ import Subscript from "@tiptap/extension-subscript";
 import type { RichNode } from "./flow";
 import type { PageLayout } from "./flow";
 import { Pagination } from "./PaginationExtension";
+import type {EditorPage} from './section-pagination';
 import {
   Citation,
   Caption,
@@ -86,6 +87,7 @@ export function RichEditor({
   searchQuery = "",
   pageLayout,
   onPages,
+  onGeometry,
 }: {
   content: RichNode;
   onChange: (node: RichNode) => void;
@@ -99,6 +101,7 @@ export function RichEditor({
   searchQuery?: string;
   pageLayout?: PageLayout;
   onPages?: (count: number) => void;
+  onGeometry?: (pages:EditorPage[])=>void;
 }) {
   const lastExternal = useRef("");
   const hydrating=useRef(!inline&&(content.content?.length??0)>300);
@@ -142,7 +145,7 @@ export function RichEditor({
       ...Media,
       DocumentAttributes,
       SpellingMarks,
-      Pagination.configure({ layout: pageLayout, onPages }),
+      Pagination.configure({ layout: pageLayout, onPages, onGeometry }),
       FormattingMarks.configure({
         enabled: showMarks,
         autoCorrect,
@@ -258,12 +261,12 @@ export function RichEditor({
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
     const storage = editor.storage as unknown as {
-      pagination: { layout?: PageLayout; onPages?: (count: number) => void };
+      pagination: { layout?: PageLayout; onPages?: (count: number) => void;onGeometry?:(pages:EditorPage[])=>void };
     };
-    Object.assign(storage.pagination, { layout: pageLayout, onPages });
+    Object.assign(storage.pagination, { layout: pageLayout, onPages,onGeometry });
     editor.view.dispatch(editor.state.tr.setMeta("paginationLayout", true));
     window.dispatchEvent(new Event("resize"));
-  }, [editor, pageLayout, onPages]);
+  }, [editor, pageLayout, onPages,onGeometry]);
   return (
     <div
       className={

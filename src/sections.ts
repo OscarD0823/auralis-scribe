@@ -29,7 +29,6 @@ export function inheritedSectionLayout(
       "footerFirst",
       "headerEven",
       "footerEven",
-      "differentFirst",
       "oddEven",
     ] as const)
       Object.assign(next, { [key]: previous[key] });

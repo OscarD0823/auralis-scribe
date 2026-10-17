@@ -100,4 +100,15 @@ test('linked sections inherit headers in Word instead of exporting independent c
  assert.equal(sections[0].getElementsByTagNameNS(W,'headerReference').length,1);
  assert.equal(sections[1].getElementsByTagNameNS(W,'headerReference').length,0);
  assert.equal(importDocx(bytes).flow.content.content!.find(n=>n.type==='sectionBreak')!.attrs?.linkToPrevious,true);
+ assert.equal(importDocx(bytes).flow.layout.differentFirst,false);
+});
+
+test('first-page header settings belong to each section even when header text is linked',async()=>{
+ const initial={...defaultLayout(),header:'Cabecera común',differentFirst:false};
+ const next={...initial,differentFirst:true,headerFirst:'Primera de sección'};
+ const content:any[]=[{type:'paragraph',content:[{type:'text',text:'Inicio'}]},{type:'sectionBreak',attrs:{id:'first-page',kind:'nextPage',layout:next,linkToPrevious:true}},{type:'paragraph',content:[{type:'text',text:'Nueva sección'}]}];
+ const bytes=await exportDocx({layout:initial,content:{type:'doc',content}},'Cabeceras de sección');
+ const flow=importDocx(bytes).flow;
+ assert.equal(flow.layout.differentFirst,false);
+ assert.equal((flow.content.content!.find(n=>n.type==='sectionBreak')!.attrs!.layout as any).differentFirst,true);
 });

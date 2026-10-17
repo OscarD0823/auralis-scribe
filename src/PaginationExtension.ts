@@ -3,13 +3,29 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { EditorView } from "@tiptap/pm/view";
 import { mm, pageSize, type PageLayout } from "./flow";
-import { planPages, type PageGap, type PageUnit } from "./pagination";
+import {type PageGap} from "./pagination";
+import {editorSectionBlocks,planSectionPages,type EditorPage,type SectionPageUnit} from './section-pagination';
 import {yieldToDevice} from '@prisma/core/task-yield';
 import type {Node as DocumentNode} from '@tiptap/pm/model';
 const key = new PluginKey<DecorationSet>("prismaPagination");
+function sectionDecorations(doc:DocumentNode,initial?:PageLayout) {
+ if(!initial)return [];
+ const blocks=editorSectionBlocks(doc,initial);
+ const canvas=Math.max(...blocks.map(b=>pageSize(b.section.layout)[0]*4/3),pageSize(initial)[0]*4/3);
+ return blocks.map(({node,pos,section})=>{
+  const pageWidth=pageSize(section.layout)[0]*4/3;
+  const body=pageWidth-mm(section.layout.left+section.layout.right)*4/3;
+  const indent=Math.max(0,Number(node.attrs.indent)||0)*24;
+  const width=node.type.name==='image'?Math.min(body,Number(node.attrs.width)||body):Math.max(24,body-indent);
+  const align=node.type.name==='image'?(node.attrs.align==='right'?body-width:node.attrs.align==='center'?(body-width)/2:0):0;
+  const left=(canvas-pageWidth)/2+mm(section.layout.left)*4/3+align;
+  return Decoration.node(pos,pos+node.nodeSize,{'data-editor-section':section.id,style:`position:relative;left:${left}px;width:${width}px;max-width:${body}px;box-sizing:border-box;`});
+ });
+}
 export const Pagination = Extension.create<{
   layout?: PageLayout;
   onPages?: (count: number) => void;
+  onGeometry?: (pages:EditorPage[])=>void;
 }>({
   name: "pagination",
   addOptions: () => ({}),
@@ -22,13 +38,14 @@ export const Pagination = Extension.create<{
       new Plugin({
         key,
         state: {
-          init: () => DecorationSet.empty,
+          init: (_,state) => DecorationSet.create(state.doc,sectionDecorations(state.doc,settings.layout)),
           apply(tr, previous) {
+            if(!settings.layout)return DecorationSet.empty;
             const plan = tr.getMeta(key) as PageGap[] | undefined;
             return plan
               ? DecorationSet.create(
                   tr.doc,
-                  plan.map((item) =>
+                  [...sectionDecorations(tr.doc,settings.layout),...plan.map((item) =>
                     Decoration.widget(
                       item.pos,
                       () => {
@@ -50,11 +67,14 @@ export const Pagination = Extension.create<{
                         side: -1,
                         key: `${item.pos}:${item.height.toFixed(2)}`,
                         ignoreSelection: true,
+                        pageGap:true,
                       },
                     ),
-                  ),
+                  )],
                 )
-              : previous.map(tr.mapping, tr.doc);
+              : tr.docChanged||tr.getMeta('paginationLayout')
+                ? DecorationSet.create(tr.doc,[...sectionDecorations(tr.doc,settings.layout),...previous.map(tr.mapping,tr.doc).find().filter(d=>d.spec.pageGap)])
+                : previous.map(tr.mapping, tr.doc);
           },
         },
         props: {
@@ -90,14 +110,13 @@ export const Pagination = Extension.create<{
               const editorRect = view.dom.getBoundingClientRect(),
                 scale =
                   editorRect.width / (view.dom.offsetWidth || editorRect.width),
-                units: PageUnit[] = [];
+                units: SectionPageUnit[] = [];
               const topOf = (rect: DOMRect) =>
                 (rect.top - editorRect.top) / scale;
               const measuredDocument=view.state.doc, measuredLayout=settings.layout, measuredGeneration=generation;
-              const blocks:{node:DocumentNode;pos:number}[]=[];
-              measuredDocument.forEach((node,pos)=>blocks.push({node,pos}));
+              const blocks=editorSectionBlocks(measuredDocument,measuredLayout);
               let sliceStarted=performance.now();
-              for (const {node,pos} of blocks) {
+              for (const {node,pos,section,nextSection} of blocks) {
                 if(performance.now()-sliceStarted>12){
                   await yieldToDevice();
                   if(destroyed)return;
@@ -116,15 +135,14 @@ export const Pagination = Extension.create<{
                   });
                 if (
                   node.type.name === "pageBreak" ||
-                  (node.type.name === "sectionBreak" &&
-                    node.attrs.kind !== "continuous")
+                  node.type.name === "sectionBreak"
                 ) {
                   units.push({
                     pos: pos + node.nodeSize,
                     top: topOf(rect) + rect.height / scale,
                     bottom: topOf(rect) + rect.height / scale,
                     force: 1,
-                    ...(node.type.name==='sectionBreak'&&['oddPage','evenPage'].includes(node.attrs.kind)?{startOn:node.attrs.kind as 'oddPage'|'evenPage'}:{}),
+                    ...(nextSection?{section:nextSection}:{}),
                   });
                   continue;
                 }
@@ -148,7 +166,7 @@ export const Pagination = Extension.create<{
                   node.type.name === "bulletList" ||
                   node.type.name === "orderedList"
                 ) {
-                  const lines = new Map<number, PageUnit>();
+                  const lines = new Map<number, SectionPageUnit>();
                   const walker = document.createTreeWalker(
                     dom,
                     NodeFilter.SHOW_TEXT,
@@ -205,7 +223,7 @@ export const Pagination = Extension.create<{
                     const measured=[...lines.values()].sort((a,b)=>a.top-b.top);
                     const keepLines=node.attrs.keepLines??node.type.name==='heading';
                     const keepNext=node.attrs.keepNext??node.type.name==='heading';
-                    const available=(pageSize(settings.layout)[1]-mm(settings.layout.top+settings.layout.bottom))*4/3;
+                    const available=(pageSize(section.layout)[1]-mm(section.layout.top+section.layout.bottom))*4/3;
                     if(keepLines&&measured.at(-1)!.bottom-measured[0].top<=available)
                       units.push({pos,top:measured[0].top,bottom:measured.at(-1)!.bottom,keepWithNext:!!keepNext});
                     else {
@@ -220,14 +238,8 @@ export const Pagination = Extension.create<{
                     bottom: topOf(rect) + rect.height / scale,
                   });
               }
-              const layout = settings.layout as PageLayout,
-                ph = (pageSize(layout)[1] * 4) / 3;
-              const plan = planPages(
-                units,
-                ph,
-                (mm(layout.top) * 4) / 3,
-                (mm(layout.bottom) * 4) / 3,
-              );
+              const canvas=Math.max(...blocks.map(b=>pageSize(b.section.layout)[0]*4/3),pageSize(measuredLayout)[0]*4/3);
+              const plan = planSectionPages(units,measuredLayout,canvas);
               view.dispatch(
                 view.state.tr
                   .setMeta(key, plan.breaks)
@@ -235,12 +247,14 @@ export const Pagination = Extension.create<{
               );
               settings.pageStarts=[{pos:0,page:1},...plan.breaks.map(b=>({pos:b.pos,page:b.page??1}))];
               settings.pageCount=plan.count;
+              (settings as typeof settings & {measuredDoc?:DocumentNode}).measuredDoc=measuredDocument;
               const pageMap=new Map<string,number>();
               view.state.doc.descendants((node,pos)=>{
                 if(node.attrs.id){
                   let low=0,high=settings.pageStarts.length;
                   while(low<high){const mid=(low+high)>>>1;if(settings.pageStarts[mid].pos<=pos)low=mid+1;else high=mid;}
-                  pageMap.set(String(node.attrs.id),settings.pageStarts[Math.max(0,low-1)].page);
+                  const physical=settings.pageStarts[Math.max(0,low-1)].page;
+                  pageMap.set(String(node.attrs.id),plan.pages[physical-1]?.number??physical);
                 }
               });
               for(const cell of view.dom.querySelectorAll<HTMLElement>('[data-index-page]')){
@@ -248,6 +262,7 @@ export const Pagination = Extension.create<{
                 if(page)cell.textContent=String(page);
               }
               settings.onPages?.(plan.count);
+              settings.onGeometry?.(plan.pages);
             } finally {
               running = false;
             }

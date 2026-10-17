@@ -448,7 +448,7 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
               width = Number(extent?.getAttribute("cx")) / 9525,
               height = Number(extent?.getAttribute("cy")) / 9525,
               displayWidth = Math.max(24, Math.min(1600, width || 400));
-            images.push({
+            const image:RichNode={
               type: "image",
               attrs: {
                 id: crypto.randomUUID(),
@@ -463,7 +463,12 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
                   ? {height:height*displayWidth/width}:{}),
                 alt: all(item, "docPr")[0]?.getAttribute("descr") || "",
               },
-            });
+            };
+            images.push(image);
+            // Keep the drawing's position among the runs. A figure and its
+            // note can share one Word paragraph; moving all text ahead of the
+            // drawing disconnects that figure from its caption.
+            content.push(image);
           } else
             warnings.add(
               "Algunas formas, gráficos o imágenes de formatos especiales necesitan revisión después de importar.",
@@ -597,7 +602,7 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
     }
     // A drawing-only paragraph is a container in Word, not an extra visible blank line.
     const visible = result.content.some((n) => n.type !== "text" || !!n.text);
-    if (!result.pageBreak)
+    if (!result.pageBreak && !result.images.length)
       return [...(visible || !result.images.length ? [node] : []), ...result.images];
     const split:RichNode[]=[];
     let part:RichNode[]=[];
@@ -609,11 +614,15 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
       split.push(segment);part=[];
     };
     for(const child of result.content){
-      if(child.type==='pageBreak'||child.type==='columnBreak'){flush();split.push(child);}
+      if(child.type==='pageBreak'||child.type==='columnBreak'||child.type==='image'){
+        flush();
+        if(child.type==='image'&&!split.length)child.attrs={...child.attrs,id:attrs.id};
+        split.push(child);
+      }
       else part.push(child);
     }
     flush();
-    return [...split,...result.images];
+    return split;
   }
   function table(el: Element): RichNode {
     const active = new Map<number, RichNode>(),
@@ -752,7 +761,7 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
     if (columnSpace) layout.columnGap = (Number(columnSpace) * 25.4) / 1440;
     const start = Number(val(direct(el, "pgNumType"), "start"));
     if (start > 0) layout.pageNumberStart = start;
-    layout.differentFirst = !!direct(el, "titlePg");
+    layout.differentFirst = yes(direct(el, "titlePg"));
     for (const ref of children(el).filter(
       (n) =>
         n.localName === "headerReference" || n.localName === "footerReference",
@@ -909,13 +918,13 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
     const noteNode = merged[noteIndex];
     const note =
       noteNode?.type === "paragraph" &&
-      /^Nota\.\s|^Note\.\s/i.test(plainText(noteNode))
-        ? plainText(noteNode).replace(/^(?:Nota|Note)\.\s*/i, "")
+      /^(?:Nota|Note)\.\s/i.test(plainText(noteNode).trim())
+        ? plainText(noteNode).trim().replace(/^(?:Nota|Note)\.\s*/i, "")
         : "";
     const caption: RichNode = {
       type: "caption",
       attrs: {
-        id: crypto.randomUUID(),
+        id: labelNode.attrs?.id || crypto.randomUUID(),
         kind,
         targetId: object.attrs?.id,
         title,
