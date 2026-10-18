@@ -276,7 +276,7 @@ export async function exportDocx(
         new CommentRangeStart(id),
         ...body,
         new CommentRangeEnd(id),
-        new CommentReference(id),
+        new TextRun({ children: [new CommentReference(id)] }),
       ];
     }
     return body;

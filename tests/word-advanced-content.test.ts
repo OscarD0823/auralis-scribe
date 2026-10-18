@@ -1,6 +1,7 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {DOMParser} from '@xmldom/xmldom';import {zipSync,strToU8} from 'fflate';
-import {importDocx} from '../src/document-import-core';import {plainText} from '../src/flow';
+import test from 'node:test';import assert from 'node:assert/strict';import {readFile} from 'node:fs/promises';import {DOMParser} from '@xmldom/xmldom';import {zipSync,strToU8,unzipSync,strFromU8} from 'fflate';
+import {importDocx} from '../src/document-import-core';import {plainText,defaultLayout} from '../src/flow';import {exportDocx} from '../src/document-export';import {setFontLoader} from '@prisma/core/fonts';
 Object.assign(globalThis,{DOMParser});
+setFontLoader(async file=>new Uint8Array(await readFile('public/fonts/'+file)));
 const w='http://schemas.openxmlformats.org/wordprocessingml/2006/main',mc='http://schemas.openxmlformats.org/markup-compatibility/2006';
 const load=(body:string)=>importDocx(zipSync({'word/document.xml':strToU8(`<w:document xmlns:w="${w}" xmlns:mc="${mc}"><w:body>${body}<w:sectPr/></w:body></w:document>`)}));
 test('inline content controls preserve their displayed values without claiming interactive controls',()=>{
@@ -26,4 +27,13 @@ test('AlternateContent uses the supported embedded image fallback once',()=>{
  }));
  const images:any[]=[];const walk=(node:any)=>{if(node.type==='image')images.push(node);node.content?.forEach(walk);};walk(result.flow.content);
  assert.equal(images.length,1);assert(!plainText(result.flow.content).includes('UNSUPPORTED_BRANCH'));assert(images[0].attrs.src.startsWith('data:image/png;base64,'));
+});
+
+test('a rebuilt DOCX anchors comments with a run reference allowed by the Word schema',async()=>{
+ const original={content:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Texto revisado',marks:[{type:'comment',attrs:{id:'review-1',text:'Conservar esta nota α',author:'Autor de prueba'}}]}]}]},layout:defaultLayout()};
+ const bytes=await exportDocx(original,'Comentarios'),parts=unzipSync(bytes),xml=new DOMParser().parseFromString(strFromU8(parts['word/document.xml']),'application/xml');
+ const references=Array.from(xml.getElementsByTagNameNS(w,'commentReference'));
+ assert.equal(references.length,1);assert.equal((references[0].parentNode as Element|null)?.localName,'r');assert.equal((references[0].parentNode as Element|null)?.namespaceURI,w);
+ const restored=importDocx(bytes),marks:any[]=[];const walk=(node:any)=>{marks.push(...(node.marks??[]));node.content?.forEach(walk);};walk(restored.flow.content);
+ assert(plainText(restored.flow.content).includes('Texto revisado'));assert(marks.some(m=>m.type==='comment'&&m.attrs.text.includes('Conservar esta nota α')));
 });
