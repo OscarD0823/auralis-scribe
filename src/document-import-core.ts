@@ -312,6 +312,19 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
     RichNode,
     { key: string; level: number; kind: string; start: number; style: string }
   >();
+  // Word stores a modern object and a legacy fallback in AlternateContent.
+  // Read one supported branch, never both copies of the same text or image.
+  function compatibleChildren(el?:Element|null):Element[]{
+    return children(el).flatMap(child=>{
+      if(child.namespaceURI!=='http://schemas.openxmlformats.org/markup-compatibility/2006'||child.localName!=='AlternateContent')return [child];
+      const branches=children(child).filter(n=>['Choice','Fallback'].includes(n.localName));
+      const branch=branches.find(n=>all(n,'blip').some(blip=>{
+        const rel=relationships.get(blip.getAttributeNS(R,'embed')||'');
+        return rel&&!rel.external&&/\.(png|jpe?g)$/i.test(rel.target)&&!!parts[partPath('word/document.xml',rel.target)];
+      }))??branches.find(n=>all(n,'txbxContent').length)??branches[0];
+      return compatibleChildren(branch);
+    });
+  }
   function inline(
     parent: Element,
     inherited: ReturnType<typeof runFormat>,
@@ -321,7 +334,7 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
       images: RichNode[] = [];
     let pageBreak = false;
     const fields:{code:string;result:boolean}[]=[];
-    for (const child of children(parent)) {
+    for (const child of compatibleChildren(parent)) {
       if (child.localName === "commentRangeStart") {
         activeComments.push(val(child, "id"));
         continue;
@@ -351,8 +364,8 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
         pageBreak ||= result.pageBreak;
         continue;
       }
-      if (["ins", "smartTag", "sdtContent"].includes(child.localName)) {
-        const result = inline(child, inherited, activeComments);
+      if (["ins", "smartTag", "sdtContent", "sdt"].includes(child.localName)) {
+        const result = inline(child.localName==='sdt'?direct(child,'sdtContent')??child:child, inherited, activeComments);
         content.push(...result.content);
         images.push(...result.images);
         pageBreak ||= result.pageBreak;
@@ -405,7 +418,7 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
           if (index >= 0) marks.splice(index, 1);
         }
       }
-      for (const item of children(child)) {
+      for (const item of compatibleChildren(child)) {
         if(item.localName==='fldChar'){
           const kind=val(item,'fldCharType');
           if(kind==='begin')fields.push({code:'',result:false});
@@ -469,10 +482,21 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
             // note can share one Word paragraph; moving all text ahead of the
             // drawing disconnects that figure from its caption.
             content.push(image);
-          } else
+          } else {
+            const box=all(item,'txbxContent')[0];
+            if(box){
+              const paragraphs=all(box,'p');
+              for(const [index,p] of paragraphs.entries()){
+                if(index)content.push({type:'hardBreak'});
+                const result=inline(p,inherited,activeComments);
+                content.push(...result.content);images.push(...result.images);pageBreak||=result.pageBreak;
+              }
+              warnings.add('El texto de los cuadros de texto se muestra en el flujo principal. Su posición y su forma requieren revisión; la reconstrucción no conserva el cuadro nativo.');
+            }
             warnings.add(
               "Algunas formas, gráficos o imágenes de formatos especiales necesitan revisión después de importar.",
             );
+          }
         }
       }
     }
@@ -991,6 +1015,12 @@ export function importDocx(bytes: Uint8Array, availableFonts:LocalFont[]=[]): {
     );
   const declaredLanguage = (parts["word/styles.xml"] ? strFromU8(parts["word/styles.xml"]) : "").match(/<(?:\w+:)?lang\b[^>]*(?:\w+:)?val=["']([^"']+)/)?.[1];
   if(containsVba)warnings.add("El documento contiene VBA. Sus macros no se ejecutan; se conservan con el original y las ediciones de texto compatibles. La reconstrucción DOCX crea una copia sin VBA.");
+  const equationCount=all(document,'oMath').length,controlCount=all(document,'sdt').filter(n=>!all(n,'instrText').some(e=>/^\s*TOC\b/i.test(e.textContent??''))).length,chartCount=all(document,'chart').length;
+  if(equationCount)warnings.add(`${equationCount===1?'Se detectó 1 ecuación nativa':'Se detectaron '+equationCount+' ecuaciones nativas'} de Word. Todavía no se representan en el editor; se conservan con el original, pero una reconstrucción DOCX no las conserva.`);
+  if(controlCount)warnings.add(`Se detectaron ${controlCount} controles de contenido. Sus valores se muestran como texto; los controles nativos no son interactivos y no se conservan al reconstruir el DOCX.`);
+  if(chartCount)warnings.add(`${chartCount===1?'Se detectó 1 gráfico nativo':'Se detectaron '+chartCount+' gráficos nativos'} de Word. Sus datos y objetos no son editables en esta vista; se conservan con el original, pero no al reconstruir el DOCX.`);
+  const fieldCodes=[...all(document,'instrText').map(n=>n.textContent??''),...all(document,'fldSimple').map(n=>val(n,'instr'))];
+  if(fieldCodes.some(code=>/^\s*(?:MERGEFIELD|CITATION|BIBLIOGRAPHY|INDEX|DOCPROPERTY|AUTHOR|IF|=)(?:\s|$)/i.test(code)))warnings.add('Algunos campos se muestran con el resultado guardado en Word. No se recalculan ni conservan como campos dinámicos al reconstruir el DOCX.');
   const flow: FlowDocument = {
     language: proofingLanguages.find(language=>language.locale.toLowerCase()===declaredLanguage?.toLowerCase())?.id ?? "es",
     layout: layouts[0] ?? defaultLayout(),
